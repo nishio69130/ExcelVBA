@@ -1,0 +1,340 @@
+Sub リセット()
+    dataAllDelete "データ貼付"    ' 「データ貼付」シートのデータを削除
+    dataAllDelete "処理対象"      ' 「処理対象」シートのデータを削除
+End Sub
+
+' 指定されたシート名の全セルをクリアする共通マクロ
+Sub dataAllDelete(sheetName)
+    Dim wsSource As Worksheet
+    Set wsSource = ThisWorkbook.Sheets(sheetName) ' 指定されたシートを取得
+    wsSource.Cells.Clear                          ' シート全体をクリア
+End Sub
+
+Sub 検体情報シート削除()
+    With ThisWorkbook.Sheets("検体情報")
+        .Range("B1").Value = ""                     ' B1セルをクリア
+        .Range(.Cells(4, 1), .Cells(1000, 7)).Value = ""  ' A4:G1000範囲をクリア
+    End With
+End Sub
+
+Sub 項目情報シート削除()
+    With ThisWorkbook.Sheets("項目情報")
+        .Range("B1").Value = ""                     ' B1セルをクリア
+        .Range("B2").Value = ""                     ' B2セルをクリア
+        .Range(.Cells(4, 1), .Cells(1000, 24)).Value = ""  ' A4:X1000範囲をクリア
+    End With
+End Sub
+
+Sub データ貼付()
+    ThisWorkbook.Sheets("データ貼付").Cells(1, 1).PasteSpecial Paste:=xlPasteAll   ' 「データ貼付」シートのA1セルにクリップボード内容を貼り付け
+End Sub
+
+Sub 項目情報貼付()
+    ThisWorkbook.Sheets("項目情報").Cells(4, 1).PasteSpecial Paste:=xlPasteAll   ' 「項目情報」シートのA4セルにクリップボード内容を貼り付け
+End Sub
+
+' 汎用的に指定されたシートをCSVファイルとして保存する共通サブルーチン
+' sheetName: 保存したいシート名
+' folderPath: 保存先フォルダのパス
+' fileNameFormat: ファイル名フォーマット (例: "20241104_1751_WEB-RPA処理後.csv")
+' deleteExisting: 同名ファイルがある場合に削除するかどうか (Trueで削除)
+Sub SaveSheetAsCSV(sheetName As String, folderPath As String, fileNameFormat As String, Optional deleteExisting As Boolean = False)
+    Dim ws As Worksheet                    ' 保存対象のシートを格納するための変数
+    Dim fileName As String                 ' 作成されるCSVファイルのファイル名
+    Dim fullPath As String                 ' フォルダパスとファイル名を結合した完全な保存先パス
+    
+    ' シートを設定
+    Set ws = ThisWorkbook.Sheets(sheetName)  ' 指定されたシート名のシートを変数wsにセット
+    
+    ' ファイル名を指定のフォーマットに基づいて作成
+    fileName = fileNameFormat                ' ファイル名を引数から受け取ったフォーマットで設定
+    
+    ' フルパスを作成 (フォルダパスとファイル名を結合)
+    fullPath = folderPath & fileName
+    
+    ' 同名ファイルが存在し、削除オプションがTrueの場合は削除
+    If deleteExisting Then
+        On Error Resume Next                 ' エラーが発生しても停止しないようにする
+        Kill fullPath                        ' 既存ファイルを削除
+        On Error GoTo 0                      ' エラーハンドリングを元に戻す
+    End If
+    
+    ' CSVファイルとして保存
+    Application.DisplayAlerts = False        ' 保存確認などのメッセージを非表示にする
+    ws.Copy                                  ' 対象シートを新しいブックとしてコピー
+    ActiveWorkbook.SaveAs fileName:=fullPath, FileFormat:=xlCSV, Local:=True  ' CSV形式で保存
+    ActiveWorkbook.Close SaveChanges:=False  ' 保存後にブックを閉じる (変更は保存しない)
+    Application.DisplayAlerts = True         ' メッセージ表示を再度有効にする
+End Sub
+
+' 「項目情報」シートをCSVファイルとして保存するマクロ
+' B1セルとB2セルの値をファイル名に使用 (例: "20000000_001項目情報.csv")
+Sub 項目情報CSV保存()
+    Dim folderPath As String                ' 保存先フォルダのパスを格納する変数
+    
+    ' 保存先フォルダのパスを指定
+    folderPath = "\\172.24.36.43\disk\【【２グループ専用】】\RPA\新WEB-RPA検討中\01_01_WEB依頼書PDF化+情報取得CSV一時保存\"
+    
+    ' SaveSheetAsCSVサブルーチンを呼び出し、項目情報シートをCSV保存
+    ' B1セルとB2セルの値を組み合わせたファイル名フォーマット
+    SaveSheetAsCSV "項目情報", folderPath, _
+        ThisWorkbook.Sheets("項目情報").Range("B1").Value & "_" & Format(ThisWorkbook.Sheets("項目情報").Range("B2").Value, "000") & "項目情報.csv"
+        
+
+End Sub
+
+' 「検体情報」シートをCSVファイルとして保存するマクロ
+' B1セルの値をファイル名に使用 (例: "20000000検体情報.csv")
+Sub 検体情報CSV保存()
+    Dim folderPath As String                ' 保存先フォルダのパスを格納する変数
+    
+    ' 保存先フォルダのパスを指定
+    folderPath = "\\172.24.36.43\disk\【【２グループ専用】】\RPA\新WEB-RPA検討中\01_01_WEB依頼書PDF化+情報取得CSV一時保存\"
+    
+    ' SaveSheetAsCSVサブルーチンを呼び出し、検体情報シートをCSV保存
+    ' B1セルの値を使用したファイル名フォーマット
+    SaveSheetAsCSV "検体情報", folderPath, ThisWorkbook.Sheets("検体情報").Range("B1").Value & "検体情報.csv"
+End Sub
+
+' 「処理対象」シートをCSVファイルとして保存するマクロ
+' 現在の日時をファイル名に使用して保存し、その後「WEB-RPA処理後.csv」としても保存
+Sub 処理CSV保存()
+    Dim folderPath As String                ' 保存先フォルダのパスを格納する変数
+    
+    ' 保存先フォルダのパスを指定
+    folderPath = "\\172.24.36.43\disk\【【２グループ専用】】\RPA\新WEB-RPA検討中\01_02_WEB依頼書PDF化+情報取得CSV処理後\"
+    
+    ' 1回目の保存: 現在の日時を使用したファイル名フォーマットで保存 (例: "20241104_1751_WEB-RPA処理後.csv")
+    SaveSheetAsCSV "処理対象", folderPath, Format(Now, "yyyymmdd_hhmm") & "_WEB-RPA処理後.csv", True
+    
+    ' 2回目の保存: 上書きで「WEB-RPA処理後.csv」として保存
+    SaveSheetAsCSV "処理対象", folderPath, "WEB-RPA処理後.csv", True
+End Sub
+
+Sub 受付番号等転記()
+    ' --- ワークシートの宣言と設定 ---
+    Dim wsSource As Worksheet    ' データ貼付シート（元データシート）
+    Dim wsHistory As Worksheet   ' 履歴シート（過去の処理記録）
+    Dim wsTarget As Worksheet    ' 処理対象シート（これから処理するデータの出力先）
+
+    Set wsSource = ThisWorkbook.Sheets("データ貼付")
+    Set wsHistory = ThisWorkbook.Sheets("依頼書PDF処理済")
+    Set wsTarget = ThisWorkbook.Sheets("処理対象")
+
+    ' --- データと配列の宣言 ---
+    Dim sourceData As Variant    ' データ貼付シートのデータ
+    Dim historyData As Variant   ' 履歴シートのデータ（重複チェック用）
+    Dim outputData() As Variant  ' 出力データのための配列
+
+    ' --- 最終行の取得 ---
+    Dim sourceLastRow As Long    ' データ貼付シートの最終行
+    Dim historyLastRow As Long   ' 履歴シートの最終行
+
+    sourceLastRow = wsSource.Cells(wsSource.Rows.Count, "B").End(xlUp).row
+    historyLastRow = wsHistory.Cells(wsHistory.Rows.Count, "A").End(xlUp).row
+
+    ' --- 各種変数の宣言 ---
+    Dim i As Long, j As Long
+    Dim found As Boolean         ' 重複チェック用のフラグ
+    Dim outputRow As Long        ' 出力行のカウンタ
+    Dim sourceColumns As Variant ' データ貼付シートから取得する列
+    Dim colIndex As Long
+    Dim currentDateTime As String ' 現在日時の格納
+
+    ' --- コピーする列の設定 ---
+    sourceColumns = Array("B", "C", "E", "F", "G", "J", "K") ' 必要な列のみ設定
+
+    ' --- データの取得 ---
+    sourceData = wsSource.Range("B1:B" & sourceLastRow).Value ' データ貼付シートのB列データ
+
+    ' --- 初回処理：履歴が空の場合、全データを処理対象に転記 ---
+    If historyLastRow < 2 Then
+        outputRow = 1
+        ReDim outputData(1 To UBound(sourceData, 1), 1 To UBound(sourceColumns) + 1)
+        
+        ' データ貼付シートのデータを処理対象に追加
+        For i = 1 To UBound(sourceData, 1)
+            For colIndex = LBound(sourceColumns) To UBound(sourceColumns)
+                outputData(outputRow, colIndex + 1) = wsSource.Cells(i, Columns(sourceColumns(colIndex)).Column).Value
+            Next colIndex
+            outputRow = outputRow + 1
+        Next i
+
+    ' --- 通常処理：履歴にデータがある場合は重複チェック ---
+    Else
+        historyData = wsHistory.Range("A1:A" & historyLastRow).Value ' 履歴データを取得
+        ReDim outputData(1 To UBound(sourceData, 1), 1 To UBound(sourceColumns) + 1)
+        
+        ' 処理対象シートの1行目に固定データを追加
+        outputRow = 1
+        For colIndex = LBound(sourceColumns) To UBound(sourceColumns)
+            outputData(outputRow, colIndex + 1) = wsSource.Cells(1, Columns(sourceColumns(colIndex)).Column).Value
+        Next colIndex
+        outputRow = outputRow + 1
+
+        ' 各行をチェックして履歴にないデータのみを抽出
+        For i = 2 To UBound(sourceData, 1)
+            found = False
+
+            ' 重複チェック
+            For j = 1 To UBound(historyData, 1)
+                If sourceData(i, 1) = historyData(j, 1) Then
+                    found = True
+                    Exit For
+                End If
+            Next j
+
+            ' 重複しないデータを出力データに追加
+            If Not found Then
+                For colIndex = LBound(sourceColumns) To UBound(sourceColumns)
+                    outputData(outputRow, colIndex + 1) = wsSource.Cells(i, Columns(sourceColumns(colIndex)).Column).Value
+                Next colIndex
+                outputRow = outputRow + 1
+            End If
+        Next i
+
+        ' 特別処理：全データが重複した場合、特定の値を追加
+        If outputRow = 2 Then
+            outputData(outputRow, 1) = "99999999"
+            outputRow = outputRow + 1
+        End If
+    End If
+
+    ' --- 処理対象シートにデータを貼り付け ---
+    If outputRow > 1 Then
+        wsTarget.Range("A1").Resize(outputRow - 1, UBound(sourceColumns) + 1).Value = outputData
+    End If
+
+    ' --- 処理対象シートの1行目に固定情報を入力 ---
+    wsTarget.Cells(1, UBound(sourceColumns) + 2).Value = "事業所"
+    wsTarget.Cells(1, UBound(sourceColumns) + 3).Value = "【分析ナビ：参照元受付No】"
+    wsTarget.Cells(1, UBound(sourceColumns) + 4).Value = "検体数"
+    wsTarget.Cells(1, UBound(sourceColumns) + 5).Value = "持込予定日"
+    wsTarget.Cells(1, UBound(sourceColumns) + 6).Value = "事業所備考"
+
+    ' --- 現在の日時を取得 ---
+    currentDateTime = Format(Now, "yyyy/mm/dd hh:nn:ss")
+
+    ' --- 処理対象シートのデータを履歴シートに転記 ---
+    If outputRow > 1 Then
+        wsHistory.Cells(historyLastRow + 1, 1).Resize(outputRow - 2, 1).Value = wsTarget.Range("A2").Resize(outputRow - 2, 1).Value
+        wsHistory.Cells(historyLastRow + 1, 2).Resize(outputRow - 2, 1).Value = currentDateTime
+    End If
+End Sub
+
+
+
+
+
+' --- コードの内容 ---
+' このコードは、データ貼付シートからのデータを履歴シートのデータと照合し、
+' 重複しないデータを処理対象シートに転記するためのものです。
+'
+' 1. 初めに、3つのシート（データ貼付、履歴、処理対象）を指定し、データの最終行を取得します。
+' 2. 次に、履歴シートが空かどうかを判定し、空の場合はデータ貼付シートのすべてのデータを処理対象シートに転記します。
+' 3. 履歴にデータが存在する場合、履歴と重複しないデータのみを処理対象に追加するため、
+'    各行ごとに履歴データと比較し、重複していない行を抽出して転記します。
+' 4. 重複しないデータが1件もない場合は、特別な印として "99999999" という値を出力します。
+' 5. 最後に、処理対象シートに転記したデータを履歴シートに追加し、日時を記録することで履歴を更新します。
+'
+' 各コード行に対応する変数や配列を使うことで、効率的にデータの抽出と転記を行い、
+' 今後のRPA処理に役立つ情報を処理対象シートに転記する仕組みです。
+
+' --- コードの詳細な解説 ---
+' このコードで使用している VBA の特定の構文について、初心者向けに詳細に解説します。
+
+' 1. `UBound` と `LBound` の使い方
+'    `UBound` と `LBound` は VBA の配列でよく使われる関数で、それぞれ「最大インデックス」と「最小インデックス」
+'    を取得するために使用します。
+'
+'    例えば、以下のような配列があったとします。
+'    Dim arr As Variant
+'    arr = Array("A", "B", "C")
+'
+'    この配列のインデックス範囲は最小が「0」、最大が「2」です。
+'    - `LBound(arr)` は「0」を返します（最小インデックス）。
+'    - `UBound(arr)` は「2」を返します（最大インデックス）。
+'
+'    このコードでは、次のように `UBound` や `LBound` を使って配列の範囲を取得しています。
+'    For colIndex = LBound(sourceColumns) To UBound(sourceColumns)
+'    この行は、`sourceColumns` 配列の最初のインデックスから最後のインデックスまで順に処理を行うための構文です。
+'    こうすることで、配列のサイズが変わっても対応できる柔軟なコードになります。
+
+' 2. `ReDim` と動的配列の使い方
+'    VBA の配列は、あらかじめサイズを指定しなくても `ReDim` を使ってサイズを後から設定できます。
+'    このような配列を「動的配列」と呼びます。
+'
+'    例えば、このコードの中で `outputData` 配列のサイズを次のように設定しています。
+'    ReDim outputData(1 To UBound(sourceData, 1), 1 To UBound(targetColumns) + 1)
+'
+'    `ReDim` は新しい配列のサイズを指定するためのキーワードです。
+'    - `1 To UBound(sourceData, 1)` は、配列の行数を `sourceData` と同じにしています。
+'      `sourceData` の行数に合わせて、`outputData` 配列も同じ行数で作成することができます。
+'    - `1 To UBound(targetColumns) + 1` は、配列の列数を `targetColumns` の数に 1 を加えた数に設定しています。
+'      これは、転記先シートの列に合わせたサイズです。
+
+' 3. `wsSource.Cells(i, Columns(sourceColumns(colIndex)).Column).Value` の解説
+'    この行は、`sourceColumns` 配列で指定された列（例：B 列や C 列）からデータを取り出すためのコードです。
+'
+'    `wsSource.Cells(i, Columns(sourceColumns(colIndex)).Column).Value` は順を追って分解すると以下のようになります：
+'
+'    - `sourceColumns(colIndex)`：この部分は、`sourceColumns` 配列の中から `colIndex` に対応する要素を取り出します。
+'      例えば、`sourceColumns` 配列が `Array("B", "C", "E")` の場合、`colIndex = 0` のときは "B" が、
+'      `colIndex = 1` のときは "C" が返されます。
+'
+'    - `Columns(sourceColumns(colIndex)).Column`：この部分は、列文字を列番号に変換する部分です。
+'      例えば、`sourceColumns(colIndex)` が "B" の場合、`Columns("B").Column` は列番号 2 を返します。
+'
+'    - `wsSource.Cells(i, 2).Value` のように、列番号に変換された状態で使うと、「i 行目」の「2 列目」（つまり B 列）の値を取得します。
+'
+'    こうすることで、複数の列（B 列、C 列、E 列など）からデータを柔軟に取得し、`outputData` 配列に入れることができます。
+'
+'    まとめると、このコードは `sourceColumns` 配列で指定された列からデータを順に取り出し、それを `outputData` 配列に
+'    格納して、後で処理対象シートに転記するために使っています。
+
+' 配列を利用した範囲操作や `ReDim` の使い方は、Excel VBA における効率的なデータ処理に非常に役立ちます。
+' このコードでは、動的配列や条件分岐を使って柔軟にデータの抽出と転記を実現しています。
+'
+' 4. `If` 文による分岐処理（初回処理と通常処理の違い）
+'    このコードでは、履歴シート（wsHistory）が空かどうかによって処理を分岐しています。
+'
+'    - `If historyLastRow < 2 Then` の条件では、履歴シートが空（またはほぼ空）かを確認しています。
+'      `historyLastRow` が `2` 未満の場合、履歴シートにはデータが存在しないとみなして初回処理を行います。
+'
+'    初回処理と通常処理で異なるのは、次の点です：
+'
+'    - 初回処理では、データ貼付シート（wsSource）の全データを `outputData` 配列に転記します。
+'      重複チェックは必要なく、ループで `sourceColumns` の各列のデータをそのまま `outputData` に入れていきます。
+'
+'    - 通常処理では、履歴シートのデータ（historyData）を使って重複チェックを行います。
+'      まず、履歴シートの A 列データを取得し、`historyData` 配列に格納します。
+'      その後、`sourceData` 配列の各行を履歴シートのデータと照合し、重複が見つからないデータのみを `outputData` に追加します。
+'      全てのデータが重複していた場合は、"99999999" という特別な値を追加する処理が含まれています。
+
+' 5. `currentDateTime = Format(Now, "yyyy/mm/dd hh:nn:ss")`
+'    `Now` 関数は、現在の日付と時刻を取得します。
+'    `Format` 関数は、指定した形式に従って値を文字列に変換します。
+'    この行では、`Now` で取得した現在の日時を「yyyy/mm/dd hh:nn:ss」という形式で文字列として `currentDateTime` に格納しています。
+'    例として、2024年11月4日午後3時15分が取得された場合、この変数には「2024/11/04 15:15:00」という文字列が格納されます。
+
+' 6. `Resize` の使い方
+'    `Resize` は、指定したセル範囲のサイズを動的に変更するためのプロパティです。
+'    例えば、以下のコード：
+'    wsTarget.Range("A1").Resize(outputRow - 1, UBound(targetColumns) + 1).Value = outputData
+'    は、A1セルから開始し、`outputRow - 1` 行分、`UBound(targetColumns) + 1` 列分の範囲に `outputData` の値を貼り付けています。
+'    こうすることで、必要な範囲だけにデータを転記することができます。
+
+' 7. `Exit For` の使い方
+'    `Exit For` は、`For` ループを強制的に抜けるための命令です。
+'    このコードでは、履歴シートのデータと一致するデータが見つかった場合に `Exit For` でループを終了し、
+'    それ以上のチェックを行わないようにしています。
+'    例えば、次の部分：
+'    If sourceData(i, 1) = historyData(j, 1) Then
+'        found = True
+'        Exit For
+'    End If
+'    では、重複が見つかった時点で `found` フラグを `True` にし、`For` ループから抜けています。
+'    これにより、効率的に重複チェックが行われ、無駄な処理を省けます。
+
+
+
