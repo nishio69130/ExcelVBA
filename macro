@@ -1,125 +1,169 @@
-Sub リセット()
-    dataAllDelete "データ貼付"    ' 「データ貼付」シートのデータを削除
-    dataAllDelete "処理対象"      ' 「処理対象」シートのデータを削除
+Option Explicit
+
+'--- 共通変数の設定 ---
+Const SHEET_NAME_DATA_PASTE As String = "データ貼付"
+Const SHEET_NAME_SAMPLE_INFO As String = "検体情報"
+Const SHEET_NAME_ITEM_INFO As String = "項目情報"
+Const SHEET_NAME_ITEM_ALL_INFO As String = "全項目情報"
+
+Const SHEET_NAME_PROCESS_TARGET As String = "処理対象"
+Const SHEET_NAME_PROCESSED As String = "処理済"
+Const SHEET_NAME_HISTORY As String = "処理対象移動済"
+Const SHEET_NAME_CoSMOS_INFO As String = "データ貼付"
+
+Const FOLDER_PATH_ITEM_INFO As String = "\\172.24.36.43\disk\【【２グループ専用】】\RPA\新WEB-RPA検討中\一時保存\"
+
+Const FOLDER_PATH_PROCESSED As String = "\\172.24.36.43\disk\【【２グループ専用】】\RPA\新WEB-RPA検討中\処理後CSV\"
+Const FILE_NAME_PROCESSED_CSV As String = "WEB-RPA処理後.csv"
+
+Const FOLDER_PATH_CoSMOS_DATA As String = "\\172.24.36.43\disk\【【２グループ専用】】\RPA\新WEB-RPA検討中\CoSMOS予約受付中\"
+
+
+Sub データ貼付シートの入力内容削除()
+    dataAllDelete SHEET_NAME_DATA_PASTE   ' 「データ貼付」シートのデータを削除
 End Sub
 
 ' 指定されたシート名の全セルをクリアする共通マクロ
-Sub dataAllDelete(sheetName)
+Sub dataAllDelete(sheetName As String)
     Dim wsSource As Worksheet
     Set wsSource = ThisWorkbook.Sheets(sheetName) ' 指定されたシートを取得
     wsSource.Cells.Clear                          ' シート全体をクリア
 End Sub
 
-Sub 検体情報シート削除()
-    With ThisWorkbook.Sheets("検体情報")
+Sub 検体情報シートの入力内容削除()
+    With ThisWorkbook.Sheets(SHEET_NAME_SAMPLE_INFO)
         .Range("B1").Value = ""                     ' B1セルをクリア
-        .Range(.Cells(4, 1), .Cells(1000, 7)).Value = ""  ' A4:G1000範囲をクリア
+        .Range(.Cells(4, 1), .Cells(1000, 12)).Value = ""  ' A4:G1000範囲をクリア
     End With
 End Sub
 
 Sub 項目情報シート削除()
-    With ThisWorkbook.Sheets("項目情報")
+    With ThisWorkbook.Sheets(SHEET_NAME_ITEM_INFO)
         .Range("B1").Value = ""                     ' B1セルをクリア
         .Range("B2").Value = ""                     ' B2セルをクリア
         .Range(.Cells(4, 1), .Cells(1000, 24)).Value = ""  ' A4:X1000範囲をクリア
     End With
 End Sub
 
-Sub データ貼付()
-    ThisWorkbook.Sheets("データ貼付").Cells(1, 1).PasteSpecial Paste:=xlPasteAll   ' 「データ貼付」シートのA1セルにクリップボード内容を貼り付け
+Sub CoSMOSデータをデータ貼付シートへ貼付()
+    Application.Wait Now + TimeValue("00:00:03")
+    ThisWorkbook.Sheets(SHEET_NAME_DATA_PASTE).Cells(1, 1).PasteSpecial Paste:=xlPasteAll   ' 「データ貼付」シートのA1セルにクリップボード内容を貼り付け
 End Sub
 
 Sub 項目情報貼付()
-    ThisWorkbook.Sheets("項目情報").Cells(4, 1).PasteSpecial Paste:=xlPasteAll   ' 「項目情報」シートのA4セルにクリップボード内容を貼り付け
+    Application.Wait Now + TimeValue("00:00:03")
+    ThisWorkbook.Sheets(SHEET_NAME_ITEM_INFO).Cells(4, 1).PasteSpecial Paste:=xlPasteAll   ' 「項目情報」シートのA4セルにクリップボード内容を貼り付け
 End Sub
 
-' 汎用的に指定されたシートをCSVファイルとして保存する共通サブルーチン
-' sheetName: 保存したいシート名
-' folderPath: 保存先フォルダのパス
-' fileNameFormat: ファイル名フォーマット (例: "20241104_1751_WEB-RPA処理後.csv")
-' deleteExisting: 同名ファイルがある場合に削除するかどうか (Trueで削除)
-Sub SaveSheetAsCSV(sheetName As String, folderPath As String, fileNameFormat As String, Optional deleteExisting As Boolean = False)
-    Dim ws As Worksheet                    ' 保存対象のシートを格納するための変数
-    Dim fileName As String                 ' 作成されるCSVファイルのファイル名
-    Dim fullPath As String                 ' フォルダパスとファイル名を結合した完全な保存先パス
-    
-    ' シートを設定
-    Set ws = ThisWorkbook.Sheets(sheetName)  ' 指定されたシート名のシートを変数wsにセット
-    
+
+
+Sub SaveSheetAsUTF8CSV(sheetName As String, folderPath As String, fileNameFormat As String, Optional deleteExisting As Boolean = False)
+    Dim ws As Worksheet
+    Dim fileName As String
+    Dim fullPath As String
+    Dim tempPath As String
+    Dim fso As Object
+    Dim ts As Object
+    Dim fileData As String
+    Dim fileStream As Object
+
+    ' 保存対象のシートを設定
+    Set ws = ThisWorkbook.Sheets(sheetName)
+   
     ' ファイル名を指定のフォーマットに基づいて作成
-    fileName = fileNameFormat                ' ファイル名を引数から受け取ったフォーマットで設定
-    
-    ' フルパスを作成 (フォルダパスとファイル名を結合)
+    fileName = fileNameFormat
     fullPath = folderPath & fileName
-    
+    tempPath = folderPath & "temp_output.csv"
+   
     ' 同名ファイルが存在し、削除オプションがTrueの場合は削除
     If deleteExisting Then
-        On Error Resume Next                 ' エラーが発生しても停止しないようにする
-        Kill fullPath                        ' 既存ファイルを削除
-        On Error GoTo 0                      ' エラーハンドリングを元に戻す
+        On Error Resume Next
+        Kill fullPath
+        On Error GoTo 0
     End If
-    
-    ' CSVファイルとして保存
-    Application.DisplayAlerts = False        ' 保存確認などのメッセージを非表示にする
-    ws.Copy                                  ' 対象シートを新しいブックとしてコピー
-    ActiveWorkbook.SaveAs fileName:=fullPath, FileFormat:=xlCSV, Local:=True  ' CSV形式で保存
-    ActiveWorkbook.Close SaveChanges:=False  ' 保存後にブックを閉じる (変更は保存しない)
-    Application.DisplayAlerts = True         ' メッセージ表示を再度有効にする
+
+    ' 一時ファイルとしてShift-JISで保存
+    Application.DisplayAlerts = False
+    ws.Copy
+    ActiveWorkbook.SaveAs fileName:=tempPath, FileFormat:=xlCSV, Local:=True
+    ActiveWorkbook.Close SaveChanges:=False
+    Application.DisplayAlerts = True
+
+    ' UTF-8形式で再保存
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    Set ts = fso.OpenTextFile(tempPath, 1, False, -2) ' Shift-JISで読み込み
+    fileData = ts.ReadAll
+    ts.Close
+    Kill tempPath  ' 一時ファイルを削除
+
+    Set fileStream = CreateObject("ADODB.Stream")
+    With fileStream
+        .Type = 2  ' テキストモード
+        .Charset = "UTF-8"  ' UTF-8形式でエンコード
+        .Open
+        .WriteText fileData
+        .SaveToFile fullPath, 2 ' UTF-8形式で保存
+        .Close
+    End With
 End Sub
 
-' 「項目情報」シートをCSVファイルとして保存するマクロ
-' B1セルとB2セルの値をファイル名に使用 (例: "20000000_001項目情報.csv")
-Sub 項目情報CSV保存()
-    Dim folderPath As String                ' 保存先フォルダのパスを格納する変数
-    
-    ' 保存先フォルダのパスを指定
-    folderPath = "\\172.24.36.43\disk\【【２グループ専用】】\RPA\新WEB-RPA検討中\01_01_WEB依頼書PDF化+情報取得CSV一時保存\"
-    
-    ' SaveSheetAsCSVサブルーチンを呼び出し、項目情報シートをCSV保存
-    ' B1セルとB2セルの値を組み合わせたファイル名フォーマット
-    SaveSheetAsCSV "項目情報", folderPath, _
-        ThisWorkbook.Sheets("項目情報").Range("B1").Value & "_" & Format(ThisWorkbook.Sheets("項目情報").Range("B2").Value, "000") & "項目情報.csv"
-        
-
+Sub 各項目情報CSV保存()
+    SaveSheetAsUTF8CSV SHEET_NAME_ITEM_INFO, FOLDER_PATH_ITEM_INFO, _
+        ThisWorkbook.Sheets(SHEET_NAME_ITEM_INFO).Range("B1").Value & "_" & Format(ThisWorkbook.Sheets(SHEET_NAME_ITEM_INFO).Range("B2").Value, "000") & "項目検体毎情報.csv"
 End Sub
 
-' 「検体情報」シートをCSVファイルとして保存するマクロ
-' B1セルの値をファイル名に使用 (例: "20000000検体情報.csv")
+Sub 全項目情報CSV保存()
+    SaveSheetAsUTF8CSV SHEET_NAME_ITEM_ALL_INFO, FOLDER_PATH_ITEM_INFO, _
+        ThisWorkbook.Sheets(SHEET_NAME_ITEM_ALL_INFO).Range("B1").Value & "_" & "項目情報.csv"
+End Sub
+
 Sub 検体情報CSV保存()
-    Dim folderPath As String                ' 保存先フォルダのパスを格納する変数
-    
-    ' 保存先フォルダのパスを指定
-    folderPath = "\\172.24.36.43\disk\【【２グループ専用】】\RPA\新WEB-RPA検討中\01_01_WEB依頼書PDF化+情報取得CSV一時保存\"
-    
-    ' SaveSheetAsCSVサブルーチンを呼び出し、検体情報シートをCSV保存
-    ' B1セルの値を使用したファイル名フォーマット
-    SaveSheetAsCSV "検体情報", folderPath, ThisWorkbook.Sheets("検体情報").Range("B1").Value & "検体情報.csv"
+    SaveSheetAsUTF8CSV SHEET_NAME_SAMPLE_INFO, FOLDER_PATH_ITEM_INFO, _
+        ThisWorkbook.Sheets(SHEET_NAME_SAMPLE_INFO).Range("B1").Value & "_検体情報.csv"
 End Sub
 
-' 「処理対象」シートをCSVファイルとして保存するマクロ
-' 現在の日時をファイル名に使用して保存し、その後「WEB-RPA処理後.csv」としても保存
-Sub 処理CSV保存()
-    Dim folderPath As String                ' 保存先フォルダのパスを格納する変数
-    
-    ' 保存先フォルダのパスを指定
-    folderPath = "\\172.24.36.43\disk\【【２グループ専用】】\RPA\新WEB-RPA検討中\01_02_WEB依頼書PDF化+情報取得CSV処理後\"
-    
-    ' 1回目の保存: 現在の日時を使用したファイル名フォーマットで保存 (例: "20241104_1751_WEB-RPA処理後.csv")
-    SaveSheetAsCSV "処理対象", folderPath, Format(Now, "yyyymmdd_hhmm") & "_WEB-RPA処理後.csv", True
-    
-    ' 2回目の保存: 上書きで「WEB-RPA処理後.csv」として保存
-    SaveSheetAsCSV "処理対象", folderPath, "WEB-RPA処理後.csv", True
+Sub CoSMOS情報CSV保存()
+    SaveSheetAsUTF8CSV SHEET_NAME_CoSMOS_INFO, FOLDER_PATH_CoSMOS_DATA, "CoSMOS予約受付中.csv"
 End Sub
 
-Sub 受付番号等転記()
+
+
+Sub 処理対象データを処理済に転記してCSV保存()
+    Dim wsTarget As Worksheet
+    Dim wsProcessed As Worksheet
+    Dim targetData As Range
+    Dim lastRow As Long
+    
+    ' シートの設定
+    Set wsTarget = ThisWorkbook.Sheets(SHEET_NAME_PROCESS_TARGET)
+    Set wsProcessed = ThisWorkbook.Sheets(SHEET_NAME_PROCESSED)
+    
+    ' ①「処理対象」シートの2行目のデータを「処理済」シートのA列最終行の1行下にコピー
+    Set targetData = wsTarget.Rows(2)
+    lastRow = wsProcessed.Cells(wsProcessed.Rows.Count, "A").End(xlUp).Row + 1
+    wsProcessed.Rows(lastRow).Value = targetData.Value
+    
+    ' ②「処理対象」シートの2行目を削除
+    wsTarget.Rows(2).Delete Shift:=xlUp
+    
+    ' ③「処理済」シートを指定のフォルダにCSVとして保存
+    SaveSheetAsUTF8CSV SHEET_NAME_PROCESSED, FOLDER_PATH_PROCESSED, FILE_NAME_PROCESSED_CSV, True
+End Sub
+
+
+
+Sub 処理対象シートへ転記()
+    ' 画面更新をオフにして処理速度を向上
+    Application.ScreenUpdating = False
+    
     ' --- ワークシートの宣言と設定 ---
     Dim wsSource As Worksheet    ' データ貼付シート（元データシート）
     Dim wsHistory As Worksheet   ' 履歴シート（過去の処理記録）
     Dim wsTarget As Worksheet    ' 処理対象シート（これから処理するデータの出力先）
 
-    Set wsSource = ThisWorkbook.Sheets("データ貼付")
-    Set wsHistory = ThisWorkbook.Sheets("依頼書PDF処理済")
-    Set wsTarget = ThisWorkbook.Sheets("処理対象")
+    Set wsSource = ThisWorkbook.Sheets(SHEET_NAME_DATA_PASTE)
+    Set wsHistory = ThisWorkbook.Sheets(SHEET_NAME_HISTORY)
+    Set wsTarget = ThisWorkbook.Sheets(SHEET_NAME_PROCESS_TARGET)
 
     ' --- データと配列の宣言 ---
     Dim sourceData As Variant    ' データ貼付シートのデータ
@@ -130,8 +174,8 @@ Sub 受付番号等転記()
     Dim sourceLastRow As Long    ' データ貼付シートの最終行
     Dim historyLastRow As Long   ' 履歴シートの最終行
 
-    sourceLastRow = wsSource.Cells(wsSource.Rows.Count, "B").End(xlUp).row
-    historyLastRow = wsHistory.Cells(wsHistory.Rows.Count, "A").End(xlUp).row
+    sourceLastRow = wsSource.Cells(wsSource.Rows.Count, "B").End(xlUp).Row
+    historyLastRow = wsHistory.Cells(wsHistory.Rows.Count, "A").End(xlUp).Row
 
     ' --- 各種変数の宣言 ---
     Dim i As Long, j As Long
@@ -144,18 +188,18 @@ Sub 受付番号等転記()
     ' --- コピーする列の設定 ---
     sourceColumns = Array("B", "C", "E", "F", "G", "J", "K") ' 必要な列のみ設定
 
-    ' --- データの取得 ---
-    sourceData = wsSource.Range("B1:B" & sourceLastRow).Value ' データ貼付シートのB列データ
+    ' --- データの取得（2行目以降） ---
+    sourceData = wsSource.Range("B2:B" & sourceLastRow).Value ' データ貼付シートのB列データ（2行目以降）
 
     ' --- 初回処理：履歴が空の場合、全データを処理対象に転記 ---
     If historyLastRow < 2 Then
         outputRow = 1
         ReDim outputData(1 To UBound(sourceData, 1), 1 To UBound(sourceColumns) + 1)
-        
+       
         ' データ貼付シートのデータを処理対象に追加
         For i = 1 To UBound(sourceData, 1)
             For colIndex = LBound(sourceColumns) To UBound(sourceColumns)
-                outputData(outputRow, colIndex + 1) = wsSource.Cells(i, Columns(sourceColumns(colIndex)).Column).Value
+                outputData(outputRow, colIndex + 1) = wsSource.Cells(i + 1, Columns(sourceColumns(colIndex)).Column).Value ' +1 to adjust for row offset
             Next colIndex
             outputRow = outputRow + 1
         Next i
@@ -164,16 +208,10 @@ Sub 受付番号等転記()
     Else
         historyData = wsHistory.Range("A1:A" & historyLastRow).Value ' 履歴データを取得
         ReDim outputData(1 To UBound(sourceData, 1), 1 To UBound(sourceColumns) + 1)
-        
-        ' 処理対象シートの1行目に固定データを追加
+       
         outputRow = 1
-        For colIndex = LBound(sourceColumns) To UBound(sourceColumns)
-            outputData(outputRow, colIndex + 1) = wsSource.Cells(1, Columns(sourceColumns(colIndex)).Column).Value
-        Next colIndex
-        outputRow = outputRow + 1
-
         ' 各行をチェックして履歴にないデータのみを抽出
-        For i = 2 To UBound(sourceData, 1)
+        For i = 1 To UBound(sourceData, 1)
             found = False
 
             ' 重複チェック
@@ -187,41 +225,38 @@ Sub 受付番号等転記()
             ' 重複しないデータを出力データに追加
             If Not found Then
                 For colIndex = LBound(sourceColumns) To UBound(sourceColumns)
-                    outputData(outputRow, colIndex + 1) = wsSource.Cells(i, Columns(sourceColumns(colIndex)).Column).Value
+                    outputData(outputRow, colIndex + 1) = wsSource.Cells(i + 1, Columns(sourceColumns(colIndex)).Column).Value ' +1 to adjust for row offset
                 Next colIndex
                 outputRow = outputRow + 1
             End If
         Next i
 
         ' 特別処理：全データが重複した場合、特定の値を追加
-        If outputRow = 2 Then
+        If outputRow = 1 Then
             outputData(outputRow, 1) = "99999999"
             outputRow = outputRow + 1
         End If
     End If
 
-    ' --- 処理対象シートにデータを貼り付け ---
+    ' --- 処理対象シートにデータを貼り付け（A列の最終行の1行下に） ---
     If outputRow > 1 Then
-        wsTarget.Range("A1").Resize(outputRow - 1, UBound(sourceColumns) + 1).Value = outputData
+        Dim targetLastRow As Long
+        targetLastRow = wsTarget.Cells(wsTarget.Rows.Count, "A").End(xlUp).Row + 1
+        wsTarget.Range("A" & targetLastRow).Resize(outputRow - 1, UBound(sourceColumns) + 1).Value = outputData
     End If
-
-    ' --- 処理対象シートの1行目に固定情報を入力 ---
-    wsTarget.Cells(1, UBound(sourceColumns) + 2).Value = "事業所"
-    wsTarget.Cells(1, UBound(sourceColumns) + 3).Value = "【分析ナビ：参照元受付No】"
-    wsTarget.Cells(1, UBound(sourceColumns) + 4).Value = "検体数"
-    wsTarget.Cells(1, UBound(sourceColumns) + 5).Value = "持込予定日"
-    wsTarget.Cells(1, UBound(sourceColumns) + 6).Value = "事業所備考"
 
     ' --- 現在の日時を取得 ---
     currentDateTime = Format(Now, "yyyy/mm/dd hh:nn:ss")
 
     ' --- 処理対象シートのデータを履歴シートに転記 ---
     If outputRow > 1 Then
-        wsHistory.Cells(historyLastRow + 1, 1).Resize(outputRow - 2, 1).Value = wsTarget.Range("A2").Resize(outputRow - 2, 1).Value
-        wsHistory.Cells(historyLastRow + 1, 2).Resize(outputRow - 2, 1).Value = currentDateTime
+        wsHistory.Cells(historyLastRow + 1, 1).Resize(outputRow - 1, 1).Value = wsTarget.Range("A" & targetLastRow).Resize(outputRow - 1, 1).Value
+        wsHistory.Cells(historyLastRow + 1, 2).Resize(outputRow - 1, 1).Value = currentDateTime
     End If
+    
+    ' 画面更新を再度オンにする
+    Application.ScreenUpdating = True
 End Sub
-
 
 
 
@@ -335,6 +370,193 @@ End Sub
 '    End If
 '    では、重複が見つかった時点で `found` フラグを `True` にし、`For` ループから抜けています。
 '    これにより、効率的に重複チェックが行われ、無駄な処理を省けます。
+
+
+
+
+
+
+
+Sub 項目情報データ取得()
+
+    ' 画面更新を停止して処理を高速化
+    Application.ScreenUpdating = False
+
+    ' 変数の宣言
+    Dim folderPath As String       ' フォルダパスを格納する変数
+    Dim fileName As String         ' 各CSVファイルの名前を格納する変数
+    Dim csvFile As Workbook        ' 開いたCSVファイルを格納する変数
+    Dim mainSheet As Worksheet     ' メインシートを格納する変数
+    Dim subSheet As Worksheet      ' サブシートを格納する変数
+    Dim lastRow As Long            ' データの最終行を格納する変数
+    Dim testNumber As Long         ' B1セルから取得する受付番号
+    Dim idNumber As String         ' B2セルから取得する検体番号
+    Dim dataRange As Range         ' CSVから取得するデータ範囲を格納する変数
+    Dim pasteRow As Long           ' データ貼り付け開始行を格納する変数
+
+    ' 処理対象フォルダのパスを設定
+    folderPath = FOLDER_PATH_ITEM_INFO
+    
+    ' CSVファイルを貼り付けるメインシート（このVBAコードを仕込んでいるExcelのシート）を指定
+    Set mainSheet = ThisWorkbook.Sheets("全項目情報")
+    
+    ' CSVファイルを貼り付けるサブシートを指定
+    Set subSheet = ThisWorkbook.Sheets("検体毎項目情報")
+    
+    ' メインシートのデータ貼り付け開始行を初期化（2行目から貼り付け開始）
+    pasteRow = 3
+    
+    ' 前回データの削除
+    With mainSheet
+        .Range("B1").Value = ""
+        .Range(.Cells(pasteRow, 1), .Cells(1000, 25)).Value = ""
+    End With
+    
+    With subSheet
+        .Range(.Cells(2, 1), .Cells(1000, 24)).Value = ""
+    End With
+
+    ' 指定のフォルダ内のCSVファイルを検索し、処理する
+    fileName = Dir(folderPath & "*項目検体毎情報.csv")
+    
+    Do While fileName <> ""
+        
+        ' CSVファイルを開く
+        Set csvFile = Workbooks.Open(folderPath & fileName)
+        
+        ' B1セルにある数値（受付番号）を取得
+        testNumber = csvFile.Sheets(1).Range("B1").Value
+        
+        ' B2セルにある数値（検体番号）を取得
+        idNumber = csvFile.Sheets(1).Range("B2").Value
+                
+        ' 受付番号をB1セルへ入力
+        mainSheet.Range("B1").Value = testNumber
+        
+        ' データの最終行を確認（5行目以降にデータがあるため、B列の最終行を基準とする）
+        lastRow = csvFile.Sheets(1).Cells(Rows.Count, 2).End(xlUp).Row
+        
+        ' データを5行目から最終行まで取得（A列以降のデータを全て含む範囲）
+        Set dataRange = csvFile.Sheets(1).Range("A5:X" & lastRow)
+        
+        ' 取得したデータをメインシートの貼り付け行に順に貼り付け
+        ' B列にデータを貼り付け、A列に識別番号を挿入
+        mainSheet.Range("B" & pasteRow).Resize(dataRange.Rows.Count, dataRange.Columns.Count).Value = dataRange.Value
+        
+        ' サブシートのA2セル以降にも同じデータを貼り付け
+        subSheet.Range("A2").Resize(dataRange.Rows.Count, dataRange.Columns.Count).Value = dataRange.Value
+        
+        ' A列に識別番号を挿入（データの行数に合わせて設定）
+        mainSheet.Range("A" & pasteRow & ":A" & pasteRow + dataRange.Rows.Count - 1).Value = idNumber
+        
+        ' 貼り付け行を次の行から開始するように更新
+        pasteRow = pasteRow + dataRange.Rows.Count
+        
+        ' 開いたCSVファイルを閉じる（保存せずに）
+        csvFile.Close False
+        
+        ' CSVファイルを削除する
+        Kill folderPath & fileName
+                
+        判定結果入力
+                
+        ' 次のCSVファイルを取得
+        fileName = Dir
+    Loop
+
+    ' 画面更新を再開
+    Application.ScreenUpdating = True
+
+End Sub
+
+
+
+
+
+
+Sub 判定結果入力()
+
+    Dim wsProcess As Worksheet
+    Dim wsDetails As Worksheet
+    Dim currentValueM2 As String
+    Dim currentValueN2 As String
+    Dim newValueM2 As String
+    Dim newValueN2 As String
+    Dim isUrgent As Boolean
+    
+    ' シートオブジェクトの取得
+    Set wsProcess = ThisWorkbook.Sheets(SHEET_NAME_PROCESS_TARGET)
+    Set wsDetails = ThisWorkbook.Sheets("判定詳細")
+    
+    ' シート「処理対象」のG2セルが「至急」かどうか
+    isUrgent = (wsProcess.Range("G2").Value = "至急")
+    
+    ' 現在のM2、N2セルの値を取得
+    currentValueM2 = wsProcess.Range("M2").Value
+    currentValueN2 = wsProcess.Range("N2").Value
+    
+    ' シート「判定詳細」から新しいV3、V4セルの値を取得
+    newValueM2 = wsDetails.Range("V3").Value
+    newValueN2 = wsDetails.Range("V7").Value
+    
+    ' M2セルの更新ロジック
+    If currentValueM2 <> newValueM2 Then
+        ' 前回と今回の入力が異なる場合、"前回値 / 今回値" 形式にする
+        If currentValueM2 = "" Then
+            wsProcess.Range("M2").Value = newValueM2
+        Else
+            wsProcess.Range("M2").Value = currentValueM2 & " / " & newValueM2
+        End If
+    Else
+        ' 一致する場合は、新しい値をそのまま入力
+        wsProcess.Range("M2").Value = newValueM2
+    End If
+    
+    ' N2セルの更新ロジック
+    If currentValueN2 <> newValueN2 Then
+        Dim values() As String
+        Dim i As Integer
+        Dim found As Boolean
+        Dim updatedValue As String
+        
+        ' 現在のN2セルの値を分割して配列にする
+        values = Split(currentValueN2, " / ")
+        found = False
+        
+        ' 新しい値が既に含まれているかチェック
+        For i = LBound(values) To UBound(values)
+            If values(i) = newValueN2 Then
+                found = True
+                Exit For
+            End If
+        Next i
+        
+        ' 新しい値が含まれていない場合、追加して再結合
+        If Not found Then
+            updatedValue = currentValueN2
+            If Len(updatedValue) > 0 Then updatedValue = updatedValue & " / "
+            updatedValue = updatedValue & newValueN2
+            wsProcess.Range("N2").Value = updatedValue
+        End If
+    Else
+        ' 一致する場合は、新しい値をそのまま入力
+        wsProcess.Range("N2").Value = newValueN2
+    End If
+    
+    ' M2セルが「至急」の場合の更新
+    If isUrgent Then
+        Dim urgentPrefix As String
+        urgentPrefix = "至急/ "
+        
+        ' 「至急/ 」が先頭についているか確認
+        If Left(wsProcess.Range("M2").Value, Len(urgentPrefix)) <> urgentPrefix Then
+            wsProcess.Range("M2").Value = urgentPrefix & wsProcess.Range("M2").Value
+        End If
+    End If
+    
+End Sub
+
+
 
 
 
