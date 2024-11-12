@@ -1,0 +1,305 @@
+function CSVデータを更新() {
+  const folderId = "17tea0oCDOFWMLfmq90OWrmpZL5QAoifx";
+ 
+  const rpaCsvFileName = "WEB-RPA処理後.csv";
+  const cosmosCsvFileName = "CoSMOS予約受付中.csv";
+  const rpaSheetName = "全データ";
+  const cosmosSheetName = "CoSMOS予約受付中データ";
+ 
+  // RPAのCSVデータを「全データ」シートに上書き
+  updateSheetWithCsvData(folderId, rpaCsvFileName, rpaSheetName);
+
+
+  // CoSMOSのCSVデータを「CoSMOS予約受付中データ」シートに上書き
+  updateSheetWithCsvData(folderId, cosmosCsvFileName, cosmosSheetName);
+}
+
+
+function updateSheetWithCsvData(folderId, csvFileName, sheetName) {
+  // フォルダ内のファイルを取得
+  const folder = DriveApp.getFolderById(folderId);
+  const files = folder.getFilesByName(csvFileName);
+
+
+  // ファイルが見つからない場合、処理を終了
+  if (!files.hasNext()) {
+    Logger.log("指定のCSVファイル '" + csvFileName + "' が見つかりません。");
+    return;
+  }
+
+
+  const csvFile = files.next();
+  const csvContent = csvFile.getBlob().getDataAsString("UTF-8");
+  const csvData = Utilities.parseCsv(csvContent);
+
+
+  // スプレッドシートとシートを取得
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = spreadsheet.getSheetByName(sheetName);
+
+
+  // シートの既存データをクリア
+  sheet.clear();
+
+
+  // CSVデータをシートに書き込み
+  sheet.getRange(1, 1, csvData.length, csvData[0].length).setValues(csvData);
+
+
+  Logger.log("シート '" + sheetName + "' にデータが正常に上書きされました。");
+}
+
+
+
+
+// ========== 設定エリア ==========
+// 以下の部分は変更が生じた場合に編集しやすいようにまとめてあります
+
+
+// データコピー先シートと条件のマッピング
+const transferSettings = [
+  {
+    sheetName: "TMRS1分",
+    remarkConditions: [],
+    excludeConditions: ["【OSﾘﾓｰﾄ】", "【KSﾘﾓｰﾄ】", "【NAﾘﾓｰﾄ】"],
+    specimenExclusion: "A000003：医薬品･部外品･化粧品医療機器等"
+  },
+  {
+    sheetName: "NARS分",
+    remarkConditions: ["【NAﾘﾓｰﾄ】"],
+    excludeConditions: [],
+    specimenExclusion: "A000003：医薬品･部外品･化粧品医療機器等"
+  },
+  {
+    sheetName: "OSRS分",
+    remarkConditions: ["【OSﾘﾓｰﾄ】"],
+    excludeConditions: [],
+    specimenExclusion: "A000003：医薬品･部外品･化粧品医療機器等"
+  },
+  {
+    sheetName: "KSRS分",
+    remarkConditions: ["【KSﾘﾓｰﾄ】"],
+    excludeConditions: [],
+    specimenExclusion: "A000003：医薬品･部外品･化粧品医療機器等"
+  },
+  {
+    sheetName: "TMPB分",
+    remarkConditions: [],
+    excludeConditions: [],
+    specimenCondition: "A000003：医薬品･部外品･化粧品医療機器等"
+  }
+];
+
+
+// 転記データの列マッピング
+const columnMapping = [0, 1, 10, 14, 6, 9, 13, 16, 17, 8, 11];
+
+
+// ========== メイン処理 ==========
+
+
+function 各RSシートへデータ移動() {
+  transferSettings.forEach(setting => {
+    データ移動(
+      setting.sheetName,
+      setting.remarkConditions,
+      setting.excludeConditions,
+      setting.specimenExclusion,
+      setting.specimenCondition
+    );
+  });
+}
+
+
+/**
+ * 指定した条件に基づき、データを転記し、移動済みデータのログを記録します。
+ *
+ * @param {string} sheetName - コピー先のシート名
+ * @param {Array} remarkConditions - L列「事業所備考」の必要な含有条件リスト
+ * @param {Array} excludeConditions - L列「事業所備考」の除外条件リスト
+ * @param {string} specimenExclusion - Q列「検体種」の除外条件
+ * @param {string} specimenCondition - Q列「検体種」に含まれるべき条件
+ */
+function データ移動(sheetName, remarkConditions, excludeConditions, specimenExclusion, specimenCondition) {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const sheetAll = spreadsheet.getSheetByName("全データ");
+  const targetSheet = spreadsheet.getSheetByName(sheetName);
+  const logSheet = spreadsheet.getSheetByName("各RSシートへ移動済データ");
+
+
+  if (!sheetAll || !targetSheet || !logSheet) {
+    SpreadsheetApp.getUi().alert(`エラー: 必要なシート「全データ」「${sheetName}」「各RSシートへ移動済データ」が見つかりません。`);
+    return;
+  }
+
+
+  // 各RSシートへ移動済みデータのA列の値を取得し、既存データセットを作成
+  const lastLogRow = logSheet.getLastRow();
+  const loggedData = lastLogRow > 1 ? logSheet.getRange(2, 1, lastLogRow - 1, 1).getValues().flat() : [];
+  const loggedDataSet = new Set(loggedData);
+
+
+  const data = sheetAll.getRange(2, 1, sheetAll.getLastRow() - 1, sheetAll.getLastColumn()).getValues();
+  const lastRowValue = parseInt(targetSheet.getRange("B1").getValue());
+
+
+  if (isNaN(lastRowValue) || lastRowValue <= 0) {
+    SpreadsheetApp.getUi().alert(`エラー: ${sheetName}シートのB1セルの値が無効です。処理を中止しました。`);
+    return;
+  }
+
+
+  const lastRowInTargetSheet = lastRowValue;
+  const timestamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy/MM/dd HH:mm:ss");
+
+
+  // フィルタリング処理
+  const filteredData = data.filter(row => {
+    const aColumnValue = row[0]; // 全データシートのA列の値
+    const remark = row[11]; // L列「事業所備考」
+    const specimen = row[16]; // Q列「検体種」
+
+
+    // すでにログシートに記録されている場合は除外
+    if (loggedDataSet.has(aColumnValue)) return false;
+
+
+    const matchesRemark = (remarkConditions.length === 0 || remarkConditions.some(cond => remark.includes(cond)));
+    const excludesRemark = excludeConditions.every(cond => !remark.includes(cond));
+    const excludesSpecimen = !specimen.includes(specimenExclusion);
+    const matchesSpecimen = !specimenCondition || specimen === specimenCondition;
+
+
+    return matchesRemark && excludesRemark && excludesSpecimen && matchesSpecimen;
+  }).map(row => {
+    return columnMapping.map(index => row[index]);
+  });
+
+
+  if (filteredData.length > 0) {
+    // データを対象シートにコピー
+    targetSheet.getRange(lastRowInTargetSheet + 1, 1, filteredData.length, filteredData[0].length).setValues(filteredData);
+
+
+    // 移動済みデータをログシートに記録
+    const logData = filteredData.map(row => [row[0], timestamp]); // A列のデータと日時を組み合わせ
+    logSheet.getRange(lastLogRow + 1, 1, logData.length, logData[0].length).setValues(logData);
+  }
+}
+
+
+
+
+// ========== 設定エリア ==========
+// 変更しやすいように、主要な設定をまとめています
+
+
+// データ取得・移動元のシート名
+const sourceSheetNames = ["TMRS1分", "NARS分", "OSRS分"];
+const cosmosSheetName = "CoSMOS予約受付中データ";
+const receptionSheetName = "受付済";
+
+
+// 範囲設定
+const dataStartRow = 13;  // データ取得開始行
+const cosmosStartRow = 2; // 「CoSMOS予約受付中データ」シートのデータ開始行
+const lastRowCell = "B1"; // 最終行を指定するセルの位置
+
+
+// ========== メイン処理 ==========
+
+
+function 受付済へ移動() {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+ 
+  // 「CoSMOS予約受付中データ」シートのB列のデータを取得
+  const cosmosData = getCosmosData(cosmosSheetName, cosmosStartRow, 2);  // B列のデータを取得
+ 
+  // 各シートについて一致しないデータを取得し、「受付済」に移動
+  sourceSheetNames.forEach(sheetName => {
+    const sheetData = getColumnData(sheetName, dataStartRow, 1); // A列のデータを取得
+    const unmatchedData = sheetData.filter(data => !cosmosData.includes(data));
+    moveDataToReceptionAndDeleteRows(unmatchedData, sheetName);
+  });
+}
+
+
+// ========== ユーティリティ関数 ==========
+
+
+/**
+ * 「CoSMOS予約受付中データ」シートからB列のデータを取得します。
+ * @param {string} sheetName - データを取得するシート名
+ * @param {number} startRow - データ開始行
+ * @param {number} column - データ取得対象の列番号
+ * @returns {Array} - B列のデータ配列
+ */
+function getCosmosData(sheetName, startRow, column) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+  if (!sheet) return [];
+
+
+  // getLastRowを使用してB列の最終行までのデータを取得
+  return sheet.getRange(startRow, column, sheet.getLastRow() - startRow + 1, 1).getValues().flat();
+}
+
+
+/**
+ * 指定されたシートの指定列のデータを取得します。
+ * @param {string} sheetName - データを取得するシート名
+ * @param {number} startRow - データ開始行
+ * @param {number} column - データ取得対象の列番号
+ * @returns {Array} - 指定列のデータ配列
+ */
+function getColumnData(sheetName, startRow, column) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+  if (!sheet) return [];
+ 
+  const lastRow = parseInt(sheet.getRange(lastRowCell).getValue()) || 1;
+  return sheet.getRange(startRow, column, lastRow - startRow + 1, 1).getValues().flat();
+}
+
+
+/**
+ * 「受付済」シートの最終行を取得します。
+ * @returns {number} - 「受付済」シートの次にデータを挿入する行
+ */
+function getReceptionLastRow() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(receptionSheetName);
+  const lastRow = parseInt(sheet.getRange(lastRowCell).getValue());
+  return isNaN(lastRow) || lastRow <= 0 ? 1 : lastRow + 1;
+}
+
+
+/**
+ * 不一致データを「受付済」シートに移動し、元のシートから削除します。
+ * @param {Array} data - 移動するデータの配列
+ * @param {string} sourceSheetName - 移動元のシート名
+ */
+function moveDataToReceptionAndDeleteRows(data, sourceSheetName) {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const sheetReception = spreadsheet.getSheetByName(receptionSheetName);
+  const sourceSheet = spreadsheet.getSheetByName(sourceSheetName);
+  const lastRowReception = getReceptionLastRow();
+
+
+  if (data.length > 0) {
+    const lastRowSource = parseInt(sourceSheet.getRange(lastRowCell).getValue()) || 1;
+    const rowsToMove = sourceSheet.getRange(dataStartRow, 1, lastRowSource - dataStartRow + 1, sourceSheet.getLastColumn())
+                        .getValues()
+                        .map((row, index) => ({ rowData: row, rowIndex: dataStartRow + index }))
+                        .filter(item => data.includes(item.rowData[0])); // A列のデータが不一致のもののみ抽出
+
+
+    const valuesToMove = rowsToMove.map(item => item.rowData);
+    const rowsToDelete = rowsToMove.map(item => item.rowIndex).reverse(); // 行削除は逆順で実行
+
+
+    // 「受付済」シートにコピー
+    sheetReception.getRange(lastRowReception, 1, valuesToMove.length, valuesToMove[0].length).setValues(valuesToMove);
+
+
+    // 元のシートからデータを行ごと削除（逆順で行削除）
+    rowsToDelete.forEach(rowIndex => sourceSheet.deleteRow(rowIndex));
+  }
+}
